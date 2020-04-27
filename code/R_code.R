@@ -15,6 +15,9 @@ library(reshape2) # Flexibly Reshape Data: A Reboot of the Reshape Package
 library(clValid) # Validation of Clustering Results
 library(naniar) # Data Structures, Summaries, and Visualisations for Missing Data
 library(DEGreport) # Report of DEG analysis
+library(pca3d) # Three Dimensional PCA Plots
+library(ggfortify) # Data Visualization Tools for Statistical Analysis Results
+
 
 # reading data
 raw_lines <- readLines("data/FPL.csv") # reading data by line
@@ -80,6 +83,41 @@ list(
   theme(plot.title=element_text(color='black',hjust=0.5,size=12)) +
   facet_wrap(~ dataset, scales = "free")
 
+# Scaling data
+
+scaled_data <- scale(raw_data[,-c(1,2)], center = TRUE, scale = TRUE)
+scaled_data <- data.frame(raw_data[,c(1,2)],scaled_data)
+head(scaled_data)
+
+
+##---------------------------------------------------------------
+##                 Data Pre-Processing for PCA                 --
+##---------------------------------------------------------------
+
+
+scaled_df_corr_matrix <- cor(scaled_data[,-c(1,2)], method = 'pearson', use = 'complete.obs')
+scaled_df_eigen <- eigen(x = scaled_df_corr_matrix)
+print(scaled_df_eigen)
+scaled_df_var <- scaled_df_eigen$values/sum(scaled_df_eigen$values)
+print(scaled_df_var)
+scaled_data_cumsum_var <- cumsum(scaled_df_var)
+tibble(.rows = 1:14, scaled_df_eigen$values, scaled_df_var, scaled_data_cumsum_var) 
+
+
+##----------------------------------------------------------------
+##                         PCA Analysis                         --
+##----------------------------------------------------------------
+
+
+scaled_df_pca <- prcomp(x = scaled_data[,-c(1,2)])
+print(scaled_df_pca)
+get_eig(scaled_df_pca)
+fviz_screeplot(scaled_df_pca)
+fviz_pca_var(X = scaled_df_pca, col.var = 'contrib', repel = TRUE,gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))
+autoplot(scaled_df_pca, data = scaled_data, colour = 'Position', loadings = TRUE, label = TRUE, label.size = 2.5,
+         loadings.label = TRUE, loadings.label.size  = 4)
+pca3d(scaled_df_pca, group =  factor(scaled_data[,2]), palette = c('yellow','tomato','steelblue'))
+rotationed_df <- as.data.frame(predict(scaled_df_pca))
 
 
 
