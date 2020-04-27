@@ -1,0 +1,35 @@
+	480 obs. of  17 variables:
+
+Name          : Factor – Player Name
+
+Team          : Factor – Team Name (3 letter abbreviation)
+
+Position      : Factor – Player Position (3 letter abbreviation)
+ 
+Cost          : Average Cost of the player 
+
+Creativity    : Assesses player performance in terms of producing goalscoring opportunities for others.
+
+Influence     :This evaluates the degree to which that player has made an impact on a single match or throughout the season.
+
+Threat        : A value that examines a player's threat on goal
+
+Goals_conceded: Number of goals conceded while the player was on the field
+
+Goals_scored  : Goals scored by the player
+
+Assists       : Assists provided by the player
+
+Own_goals     : Own goals scored by the player
+
+Yellow_cards  : Yellow cards received by the player
+
+Red_cards     : Red cards received by the player
+
+TSB           : % of teams in which the player has been selected
+
+Minutes       : Minutes played by the player
+
+Bonus         : Bonus points received by the player
+
+points        : Points scored by the player
