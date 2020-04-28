@@ -17,11 +17,13 @@ library(naniar) # Data Structures, Summaries, and Visualisations for Missing Dat
 library(DEGreport) # Report of DEG analysis
 library(pca3d) # Three Dimensional PCA Plots
 library(ggfortify) # Data Visualization Tools for Statistical Analysis Results
+library(NbClust) # Determining the Best Number of Clusters in a Data Set
+library(clustree) # Visualise Clusterings at Different Resolutions
 
 
 # reading data
 raw_lines <- readLines("data/FPL.csv") # reading data by line
-raw_lines <- gsub('(^"|"$)', "", raw_lines) # removing the outer quotes and then using double double quotes as quotes
+raw_lines <- gsub('(^"|"$)', "", raw_lines) # removing the outer quotes and then using double quotes as quotes
 raw_data <- read.csv(textConnection(raw_lines), quote = '""', header = TRUE, row.names = 1) # reading data
 
 
@@ -79,7 +81,7 @@ list(
   ggplot(aes(x, y)) +
   geom_point() +
   geom_smooth(method = 'lm', se = FALSE)+
-  geom_cor(method = 'pearson')+ labs(title = 'Scatter Plots of The Most Correlated Variables', xlab = '', ylab = '')+
+  geom_cor(method = 'pearson')+ labs(title = 'Scatter Plots of The Most Correlated Variables', x = '', y = '')+
   theme(plot.title=element_text(color='black',hjust=0.5,size=12)) +
   facet_wrap(~ dataset, scales = "free")
 
@@ -112,12 +114,71 @@ tibble(.rows = 1:14, scaled_df_eigen$values, scaled_df_var, scaled_data_cumsum_v
 scaled_df_pca <- prcomp(x = scaled_data[,-c(1,2)])
 print(scaled_df_pca)
 get_eig(scaled_df_pca)
-fviz_screeplot(scaled_df_pca)
-fviz_pca_var(X = scaled_df_pca, col.var = 'contrib', repel = TRUE,gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))
+fviz_screeplot(scaled_df_pca, ggtheme = theme_gray())
+# Extract the results for variables
+var <- get_pca_var(scaled_df_pca)
+# Contributions of variables to PC1
+fviz_contrib(scaled_df_pca, choice = "var", axes = 1, top = 10, ggtheme = theme_gray())
+# Contributions of variables to PC2
+fviz_contrib(scaled_df_pca, choice = "var", axes = 2, top = 10, ggtheme = theme_gray())
+# Contributions of variables to PC3
+fviz_contrib(scaled_df_pca, choice = "var", axes = 3, top = 10, ggtheme = theme_gray())
+fviz_pca_var(X = scaled_df_pca, col.var = 'contrib', repel = TRUE,gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), ggtheme = theme_gray()) + ggtitle("Variables - PCA")
 autoplot(scaled_df_pca, data = scaled_data, colour = 'Position', loadings = TRUE, label = TRUE, label.size = 2.5,
          loadings.label = TRUE, loadings.label.size  = 4)
 pca3d(scaled_df_pca, group =  factor(scaled_data[,2]), palette = c('yellow','tomato','steelblue'))
 rotationed_df <- as.data.frame(predict(scaled_df_pca))
+
+
+##----------------------------------------------------------------
+##              Data Pre-Processing for Clusturing              --
+##----------------------------------------------------------------
+
+# Choosing the right algorithm with internal measures
+scaled_opt_algorithm_internal <- clValid(scaled_data[,-c(1,2)], nClust = 2:10, clMethods = c('hierarchical','kmeans','pam','clara'), validation = "internal", verbose = TRUE, method = 'ward')
+summary(scaled_opt_algorithm_internal)
+# Choosing the right algorithm with internal measures
+scaled_opt_algorithm_stability <- clValid(scaled_data[,-c(1,2)], nClust = 2:10, clMethods = c('hierarchical','kmeans','pam','clara'), validation = "stability", verbose = TRUE, method = 'ward')
+summary(scaled_opt_algorithm_stability)
+
+# find optimal cluster
+
+set.seed(31)
+# function to compute total within-cluster sum of squares
+fviz_nbclust(scaled_data[,-c(1,2)], kmeans, method = "wss", k.max = 24) + ggtitle("the Elbow Method") + theme_gray()
+# Gap Statistics
+fviz_nbclust(scaled_data[,-c(1,2)], kmeans, method = "gap_stat", k.max = 24) + ggtitle("Gap Statistics") + theme_gray()
+# The Silhouette Method
+fviz_nbclust(scaled_data[,-c(1,2)], kmeans, method = "silhouette", k.max = 24) + ggtitle("Gap Statistics") + theme_gray()
+# NbCluster method
+
+scaled_nbclust <- NbClust(scaled_data[,-c(1,2)], distance = "euclidean", min.nc = 2, max.nc = 10, method = "ward.D2", index ="all")
+fviz_nbclust(scaled_nbclust) + theme_gray() + ggtitle("NbClust's optimal number of clusters")
+
+# cluster tree
+
+n_cluster <- NULL
+for (k in 1:11){
+  n_cluster[k] <- kmeans(scaled_data[,-c(1,2)], k)
+}
+cluster_df <- data.frame(n_cluster)
+
+
+# add a prefix to the column names
+colnames(cluster_df) <- seq(1:11)
+colnames(cluster_df) <- paste0("k",colnames(cluster_df))
+
+
+# get individual PCA
+df_pca <- prcomp(cluster_df)
+ind_coord <- df_pca$x
+ind_coord <- ind_coord[,1:2]
+cluster_df <- bind_cols(as.data.frame(cluster_df), as.data.frame(ind_coord))
+clustree(cluster_df, prefix = "k")
+
+
+
+
 
 
 
