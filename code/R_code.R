@@ -23,7 +23,6 @@ library(magrittr) # A Forward-Pipe Operator for R
 library(kableExtra) # Construct Complex Table with 'kable' and Pipe Syntax
 library(qgraph) # Graph Plotting Methods, Psychometric Data Visualization and Graphical Model Estimation
 library(ggdendro) # Create Dendrograms and Tree Diagrams Using 'ggplot2'
-library(ggiraphExtra)
 
 
 # reading data
