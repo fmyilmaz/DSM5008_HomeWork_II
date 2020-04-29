@@ -15,10 +15,16 @@ library(reshape2) # Flexibly Reshape Data: A Reboot of the Reshape Package
 library(clValid) # Validation of Clustering Results
 library(naniar) # Data Structures, Summaries, and Visualisations for Missing Data
 library(DEGreport) # Report of DEG analysis
-library(pca3d) # Three Dimensional PCA Plots
+library(scatterplot3d) # 3D Scatter Plot
 library(ggfortify) # Data Visualization Tools for Statistical Analysis Results
 library(NbClust) # Determining the Best Number of Clusters in a Data Set
 library(gridExtra) # Miscellaneous Functions for "Grid" Graphics
+library(magrittr) # A Forward-Pipe Operator for R
+library(kableExtra) # Construct Complex Table with 'kable' and Pipe Syntax
+library(qgraph) # Graph Plotting Methods, Psychometric Data Visualization and Graphical Model Estimation
+library(ggdendro) # Create Dendrograms and Tree Diagrams Using 'ggplot2'
+library(ggiraphExtra)
+
 
 # reading data
 raw_lines <- readLines("data/FPL.csv") # reading data by line
@@ -125,13 +131,17 @@ fviz_contrib(scaled_df_pca, choice = "var", axes = 3, top = 10, ggtheme = theme_
 fviz_pca_var(X = scaled_df_pca, col.var = 'contrib', repel = TRUE,gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), ggtheme = theme_gray()) + ggtitle("Variables - PCA")
 autoplot(scaled_df_pca, data = scaled_data, colour = 'Position', loadings = TRUE, label = TRUE, label.size = 2.5,
          loadings.label = TRUE, loadings.label.size  = 4)
-pca3d(scaled_df_pca, group =  factor(scaled_data[,2]), palette = c('yellow','tomato','steelblue'))
+scatterplot3d(scaled_df_pca$x[,1:3], pch=20, color="blue") 
 rotationed_df <- as.data.frame(predict(scaled_df_pca))
 
 
 ##----------------------------------------------------------------
 ##              Data Pre-Processing for Clusturing              --
 ##----------------------------------------------------------------
+
+dist_m <- as.matrix(dist(scaled_data[1:50,-c(1,2)]))
+dist_mi <- 1/dist_m # one over, as qgraph takes similarity matrices as input
+qgraph(dist_mi, layout='spring', vsize=3)
 
 # Choosing the right algorithm with internal measures
 scaled_opt_algorithm_internal <- clValid(scaled_data[,-c(1,2)], nClust = 2:10, clMethods = c('hierarchical','kmeans','pam','clara'), validation = "internal", verbose = TRUE, method = 'ward')
@@ -166,12 +176,9 @@ fviz_nbclust(scaled_nbclust) + theme_gray() + ggtitle("NbClust's optimal number 
 
 
 
-
 ##----------------------------------------------------------------
 ##                      K-Means Clusturing                      --
 ##----------------------------------------------------------------
-
-
 
 
 k2 <- kmeans(scaled_data[,-c(1,2)], centers = 2, nstart = 25)
@@ -203,7 +210,6 @@ grid.arrange(p2, p3, p4, p5, p6, nrow = 3)
 grid.arrange(p7, p8, p9, p10, p11, p12, nrow = 3)
 
 
-
 ssc <- data.frame(kmeans = c(2,3,4,5,6,7,8,9,10,11,12),
   withinss = c(mean(k2$withinss), mean(k3$withinss),mean(k4$withinss),mean(k5$withinss), mean(k6$withinss), mean(k7$withinss), 
                mean(k8$withinss),mean(k9$withinss),mean(k10$withinss),mean(k11$withinss), mean(k12$withinss)),
@@ -211,22 +217,49 @@ ssc <- data.frame(kmeans = c(2,3,4,5,6,7,8,9,10,11,12),
                 k9$betweenss,k10$betweenss,k11$betweenss, k12$betweenss))
 
 ssc %<>% gather(., key = "measurement", value = value, -kmeans)
-#ssc$value <- log10(ssc$value)
 ssc %>% ggplot(., aes(x=kmeans, y=log(value), fill = measurement)) + geom_bar(stat = "identity", position = "dodge") + 
   ggtitle("Cluster Model Comparison") + xlab("Number of Clusters") + ylab("Log10 Total Sum of Squares") + 
   scale_x_discrete(name = "Number of Clusters", limits = c('0',"2", "3",'4','5', "6", "7", "8",'9','10','11', "12"))
 
+#Final Cluster
+k3 <- kmeans(scaled_data[,-c(1,2)], centers = 3, nstart = 25)
+fviz_cluster(k3, data = scaled_data[,-c(1,2)]) + ggtitle("k = 3")
+scaled_data[,-c(1,2)] %>% mutate(Cluster = k3$cluster) %>% group_by(Cluster) %>% summarise_all("mean") %>% kable() %>% kable_styling()
+
+jaccard_df <- data.frame(actual = as.numeric(as.factor(scaled_data$Position)), predicted = k3$cluster)
+
+# margin 1 for wide 2 for long format 
+jaccard <- function(df, margin) {
+  if (margin == 1 | margin == 2) {
+    M_00 <- apply(df, margin, sum) == 0
+    M_11 <- apply(df, margin, sum) == 2
+    if (margin == 1) {
+      df <- df[!M_00, ]
+      JSim <- sum(M_11) / nrow(df)
+    } else {
+      df <- df[, !M_00]
+      JSim <- sum(M_11) / length(df)
+    }
+    JDist <- 1 - JSim
+    return(c(JSim = JSim, JDist = JDist))
+  } else break
+}
+
+
+jaccard(jaccard_df, margin = 1)
 
 
 ##---------------------------------------------------------------
 ##                   Hierarchical Clustering                   --
 ##---------------------------------------------------------------
 
-
+## find optimal agloritm for hierarchical clustering ##
 
 # methods to assess
+
 methods <- c( "average", "single", "complete", "ward")
 names(methods) <- c( "average", "single", "complete", "ward")
+
 # function to compute coefficient
 ac <- function(x) {
   agnes(scaled_data[,-c(1,2)], method = x)$ac
@@ -236,9 +269,41 @@ method_result <- map_dbl(methods, ac)
 method_result
 method_df <- data.frame(methods, method_result)
 
-
 # Barplot
 ggplot(method_df, aes(x=methods, y=method_result)) + 
   geom_bar(stat = "identity", fill = 'steelblue') + labs(title = 'Cluster Methods Comparation', x = 'models', y = 'Percentage of Ac')
+
+## find optimal cluster ##
+
+set.seed(31)
+# function to compute total within-cluster sum of squares
+fviz_nbclust(scaled_data[,-c(1,2)], FUN = hcut, method = "wss", k.max = 24) + ggtitle("The Elbow Method") + theme_gray()
+# Gap Statistics
+fviz_nbclust(scaled_data[,-c(1,2)], FUN = hcut, method = "gap_stat", k.max = 24) + ggtitle("Gap Statistics") + theme_gray()
+# The Silhouette Method
+fviz_nbclust(scaled_data[,-c(1,2)], FUN = hcut, method = "silhouette", k.max = 24) + ggtitle("Silhouette Method") + theme_gray()
+
+
+# Dissimilarity matrix
+distance <- dist(scaled_data[,-c(1,2)], method = "euclidean")
+scaled_h_clust <- hclust(distance, method = "ward.D2")
+plot(scaled_h_clust, cex = 0.6)
+abline(h = 5, lty = 2)
+rect.hclust(scaled_h_clust, k = 5, border = 2:5)
+cut_deng<- as.dendrogram(scaled_h_clust)
+plot(cut(cut_deng, h = 28)$lower[[2]],
+     main = "Second branch of lower tree with cut at h=28")
+
+
+
+
+
+
+
+
+
+
+
+
 
 
