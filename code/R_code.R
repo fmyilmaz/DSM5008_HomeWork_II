@@ -18,8 +18,7 @@ library(DEGreport) # Report of DEG analysis
 library(pca3d) # Three Dimensional PCA Plots
 library(ggfortify) # Data Visualization Tools for Statistical Analysis Results
 library(NbClust) # Determining the Best Number of Clusters in a Data Set
-library(clustree) # Visualise Clusterings at Different Resolutions
-
+library(gridExtra) # Miscellaneous Functions for "Grid" Graphics
 
 # reading data
 raw_lines <- readLines("data/FPL.csv") # reading data by line
@@ -149,36 +148,97 @@ fviz_nbclust(scaled_data[,-c(1,2)], kmeans, method = "wss", k.max = 24) + ggtitl
 # Gap Statistics
 fviz_nbclust(scaled_data[,-c(1,2)], kmeans, method = "gap_stat", k.max = 24) + ggtitle("Gap Statistics") + theme_gray()
 # The Silhouette Method
-fviz_nbclust(scaled_data[,-c(1,2)], kmeans, method = "silhouette", k.max = 24) + ggtitle("Gap Statistics") + theme_gray()
+fviz_nbclust(scaled_data[,-c(1,2)], kmeans, method = "silhouette", k.max = 24) + ggtitle("Silhouette Method") + theme_gray()
 # NbCluster method
 
 scaled_nbclust <- NbClust(scaled_data[,-c(1,2)], distance = "euclidean", min.nc = 2, max.nc = 10, method = "ward.D2", index ="all")
 fviz_nbclust(scaled_nbclust) + theme_gray() + ggtitle("NbClust's optimal number of clusters")
 
-# cluster tree
 
-n_cluster <- NULL
-for (k in 1:11){
-  n_cluster[k] <- kmeans(scaled_data[,-c(1,2)], k)
+
+###------------------------------------------------------------------------
+###------------------------------------------------------------------------
+###                                                                     ---
+###                         CLUSTURING ANALYSIS                         ---
+###                                                                     ---
+###------------------------------------------------------------------------
+###------------------------------------------------------------------------
+
+
+
+
+##----------------------------------------------------------------
+##                      K-Means Clusturing                      --
+##----------------------------------------------------------------
+
+
+
+
+k2 <- kmeans(scaled_data[,-c(1,2)], centers = 2, nstart = 25)
+k3 <- kmeans(scaled_data[,-c(1,2)], centers = 3, nstart = 25)
+k4 <- kmeans(scaled_data[,-c(1,2)], centers = 4, nstart = 25)
+k5 <- kmeans(scaled_data[,-c(1,2)], centers = 5, nstart = 25)
+k6 <- kmeans(scaled_data[,-c(1,2)], centers = 6, nstart = 25)
+k7 <- kmeans(scaled_data[,-c(1,2)], centers = 7, nstart = 25)
+k8 <- kmeans(scaled_data[,-c(1,2)], centers = 8, nstart = 25)
+k9 <- kmeans(scaled_data[,-c(1,2)], centers = 9, nstart = 25)
+k10 <- kmeans(scaled_data[,-c(1,2)], centers = 10, nstart = 25)
+k11 <- kmeans(scaled_data[,-c(1,2)], centers = 11, nstart = 25)
+k12 <- kmeans(scaled_data[,-c(1,2)], centers = 12, nstart = 25)
+
+# plots to compare
+p2 <- fviz_cluster(k2, data = scaled_data[,-c(1,2)]) + ggtitle("k = 2")
+p3 <- fviz_cluster(k3, data = scaled_data[,-c(1,2)]) + ggtitle("k = 3")
+p4 <- fviz_cluster(k4, data = scaled_data[,-c(1,2)]) + ggtitle("k = 4")
+p5 <- fviz_cluster(k5, data = scaled_data[,-c(1,2)]) + ggtitle("k = 5")
+p6 <- fviz_cluster(k6, data = scaled_data[,-c(1,2)]) + ggtitle("k = 6")
+p7 <- fviz_cluster(k7, data = scaled_data[,-c(1,2)]) + ggtitle("k = 7")
+p8 <- fviz_cluster(k8, data = scaled_data[,-c(1,2)]) + ggtitle("k = 8")
+p9 <- fviz_cluster(k9, data = scaled_data[,-c(1,2)]) + ggtitle("k = 9")
+p10 <- fviz_cluster(k10, data = scaled_data[,-c(1,2)]) + ggtitle("k = 10")
+p11 <- fviz_cluster(k11, data = scaled_data[,-c(1,2)]) + ggtitle("k = 11")
+p12 <- fviz_cluster(k12, data = scaled_data[,-c(1,2)]) + ggtitle("k = 12")
+
+grid.arrange(p2, p3, p4, p5, p6, nrow = 3)
+grid.arrange(p7, p8, p9, p10, p11, p12, nrow = 3)
+
+
+
+ssc <- data.frame(kmeans = c(2,3,4,5,6,7,8,9,10,11,12),
+  withinss = c(mean(k2$withinss), mean(k3$withinss),mean(k4$withinss),mean(k5$withinss), mean(k6$withinss), mean(k7$withinss), 
+               mean(k8$withinss),mean(k9$withinss),mean(k10$withinss),mean(k11$withinss), mean(k12$withinss)),
+  betweenss = c(k2$betweenss, k3$betweenss,k4$betweenss,k5$betweenss, k6$betweenss, k7$betweenss, k8$betweenss,
+                k9$betweenss,k10$betweenss,k11$betweenss, k12$betweenss))
+
+ssc %<>% gather(., key = "measurement", value = value, -kmeans)
+#ssc$value <- log10(ssc$value)
+ssc %>% ggplot(., aes(x=kmeans, y=log(value), fill = measurement)) + geom_bar(stat = "identity", position = "dodge") + 
+  ggtitle("Cluster Model Comparison") + xlab("Number of Clusters") + ylab("Log10 Total Sum of Squares") + 
+  scale_x_discrete(name = "Number of Clusters", limits = c('0',"2", "3",'4','5', "6", "7", "8",'9','10','11', "12"))
+
+
+
+##---------------------------------------------------------------
+##                   Hierarchical Clustering                   --
+##---------------------------------------------------------------
+
+
+
+# methods to assess
+methods <- c( "average", "single", "complete", "ward")
+names(methods) <- c( "average", "single", "complete", "ward")
+# function to compute coefficient
+ac <- function(x) {
+  agnes(scaled_data[,-c(1,2)], method = x)$ac
 }
-cluster_df <- data.frame(n_cluster)
+
+method_result <- map_dbl(methods, ac)
+method_result
+method_df <- data.frame(methods, method_result)
 
 
-# add a prefix to the column names
-colnames(cluster_df) <- seq(1:11)
-colnames(cluster_df) <- paste0("k",colnames(cluster_df))
-
-
-# get individual PCA
-df_pca <- prcomp(cluster_df)
-ind_coord <- df_pca$x
-ind_coord <- ind_coord[,1:2]
-cluster_df <- bind_cols(as.data.frame(cluster_df), as.data.frame(ind_coord))
-clustree(cluster_df, prefix = "k")
-
-
-
-
-
+# Barplot
+ggplot(method_df, aes(x=methods, y=method_result)) + 
+  geom_bar(stat = "identity", fill = 'steelblue') + labs(title = 'Cluster Methods Comparation', x = 'models', y = 'Percentage of Ac')
 
 
