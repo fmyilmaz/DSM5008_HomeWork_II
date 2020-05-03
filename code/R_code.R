@@ -23,7 +23,8 @@ library(magrittr) # A Forward-Pipe Operator for R
 library(kableExtra) # Construct Complex Table with 'kable' and Pipe Syntax
 library(qgraph) # Graph Plotting Methods, Psychometric Data Visualization and Graphical Model Estimation
 library(ggdendro) # Create Dendrograms and Tree Diagrams Using 'ggplot2'
-
+library(clustertend) # Check the Clustering Tendency
+library(flexclust) # Flexible Cluster Algorithms
 
 # reading data
 raw_lines <- readLines("data/FPL.csv") # reading data by line
@@ -37,25 +38,25 @@ raw_data <- read.csv(textConnection(raw_lines), quote = '""', header = TRUE, row
 
 dim(raw_data) # dimensions: 480 x 16 matrix
 str(raw_data) # structure of data
-head(raw_data) # fist six rows
 gg_miss_var(raw_data) # viz missing value
 summary(raw_data) # summary of data
-stat.desc(raw_data)
-
+stat.desc(raw_data) # exented summary of data
+head(raw_data) # fist six rows
+table(raw_data$Position)
 # Density Plot
 raw_data %>% 
   melt(
     # ID variables - all the variables to keep but not split apart on
-     id.vars=c('Team', 'Position'),
+     id.vars= c('Team', 'Position'),
      # The source columns
      measure.vars=c(colnames(raw_data)[-c(1,2)]),
-     # add name to variables and new variable
-     variable.name="measurment",
-     value.name="value"
 ) %>% # set scales free since all variables in different range
-  ggplot(aes(value)) +geom_density(color = 'steelblue', fill = 'steelblue') + facet_wrap(~measurment, scales = "free") +
+  ggplot(aes(value)) +geom_density(color = 'steelblue', fill = 'steelblue') + facet_wrap(~variable, scales = "free") +
   labs(title = 'Density Plot of Variables') + theme(plot.title=element_text(color='black',hjust=0.5,size=12)) 
 
+# boxplot 
+ggplot(stack(raw_data[,-c(1,2)]), aes(x = ind, y = values)) +
+  geom_boxplot()+ coord_flip() + labs(title = 'Box Plot of Raw Variables', x = 'Variables', y = 'Values')
 
 # correlation  calculation
 
@@ -94,20 +95,56 @@ list(
 scaled_data <- scale(raw_data[,-c(1,2)], center = TRUE, scale = TRUE)
 scaled_data <- data.frame(raw_data[,c(1,2)],scaled_data)
 head(scaled_data)
-
+ggplot(stack(scaled_data[,-c(1,2)]), aes(x = ind, y = values)) +
+  geom_boxplot()+ coord_flip() + labs(title = 'Box Plot of Scaled Variables', x = 'Variables', y = 'Values')
 
 ##---------------------------------------------------------------
 ##                 Data Pre-Processing for PCA                 --
 ##---------------------------------------------------------------
 
 
+# kmo statistics
+kmo <-  function( data ){
+  library(MASS) 
+  X <- cor(as.matrix(data)) 
+  iX <- ginv(X) 
+  S2 <- diag(diag((iX^-1)))
+  AIS <- S2%*%iX%*%S2                      # anti-image covariance matrix
+  IS <- X+AIS-2*S2                         # image covariance matrix
+  Dai <- sqrt(diag(diag(AIS)))
+  IR <- ginv(Dai)%*%IS%*%ginv(Dai)         # image correlation matrix
+  AIR <- ginv(Dai)%*%AIS%*%ginv(Dai)       # anti-image correlation matrix
+  a <- apply((AIR - diag(diag(AIR)))^2, 2, sum)
+  AA <- sum(a) 
+  b <- apply((X - diag(nrow(X)))^2, 2, sum)
+  BB <- sum(b)
+  MSA <- b/(b+a)                        # indiv. measures of sampling adequacy
+  AIR <- AIR-diag(nrow(AIR))+diag(MSA)  # Examine the anti-image of the correlation matrix. That is the  negative of the partial correlations, partialling out all other variables.
+  kmo <- BB/(AA+BB)                     # overall KMO statistic
+  # Reporting the conclusion 
+  if (kmo >= 0.00 && kmo < 0.50){test <- 'The KMO test yields a degree of common variance unacceptable for FA.'} 
+  else if (kmo >= 0.50 && kmo < 0.60){test <- 'The KMO test yields a degree of common variance miserable.'} 
+  else if (kmo >= 0.60 && kmo < 0.70){test <- 'The KMO test yields a degree of common variance mediocre.'} 
+  else if (kmo >= 0.70 && kmo < 0.80){test <- 'The KMO test yields a degree of common variance middling.' } 
+  else if (kmo >= 0.80 && kmo < 0.90){test <- 'The KMO test yields a degree of common variance meritorious.' }
+  else { test <- 'The KMO test yields a degree of common variance marvelous.' }
+  
+  ans <- list( overall = kmo,
+               report = test,
+               individual = MSA,
+               AIS = AIS,
+               AIR = AIR )
+  return(ans)
+} 
+kmo(data = scaled_data[,-c(1,2)])$overall
+
+# data scaling
 scaled_df_corr_matrix <- cor(scaled_data[,-c(1,2)], method = 'pearson', use = 'complete.obs')
 scaled_df_eigen <- eigen(x = scaled_df_corr_matrix)
-print(scaled_df_eigen)
+print(scaled_df_eigen[1])
 scaled_df_var <- scaled_df_eigen$values/sum(scaled_df_eigen$values)
-print(scaled_df_var)
 scaled_data_cumsum_var <- cumsum(scaled_df_var)
-tibble(.rows = 1:14, scaled_df_eigen$values, scaled_df_var, scaled_data_cumsum_var) 
+tibble(.rows = 1:14, eigenValue = scaled_df_eigen$values, Var = scaled_df_var, cumsumVar = scaled_data_cumsum_var) 
 
 
 ##----------------------------------------------------------------
@@ -116,19 +153,21 @@ tibble(.rows = 1:14, scaled_df_eigen$values, scaled_df_var, scaled_data_cumsum_v
 
 
 scaled_df_pca <- prcomp(x = scaled_data[,-c(1,2)])
+scaled_df_pca$rotation
 print(scaled_df_pca)
 get_eig(scaled_df_pca)
 fviz_screeplot(scaled_df_pca, ggtheme = theme_gray())
 # Extract the results for variables
 var <- get_pca_var(scaled_df_pca)
 # Contributions of variables to PC1
-fviz_contrib(scaled_df_pca, choice = "var", axes = 1, top = 10, ggtheme = theme_gray())
+pca_p1<- fviz_contrib(scaled_df_pca, choice = "var", axes = 1, top = 10, ggtheme = theme_gray())
 # Contributions of variables to PC2
-fviz_contrib(scaled_df_pca, choice = "var", axes = 2, top = 10, ggtheme = theme_gray())
+pca_p2<- fviz_contrib(scaled_df_pca, choice = "var", axes = 2, top = 10, ggtheme = theme_gray())
 # Contributions of variables to PC3
-fviz_contrib(scaled_df_pca, choice = "var", axes = 3, top = 10, ggtheme = theme_gray())
-fviz_pca_var(X = scaled_df_pca, col.var = 'contrib', repel = TRUE,gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), ggtheme = theme_gray()) + ggtitle("Variables - PCA")
-autoplot(scaled_df_pca, data = scaled_data, colour = 'Position', loadings = TRUE, label = TRUE, label.size = 2.5,
+pca_p3<- fviz_contrib(scaled_df_pca, choice = "var", axes = 3, top = 10, ggtheme = theme_gray())
+pca_p4<- fviz_pca_var(X = scaled_df_pca, col.var = 'contrib', repel = TRUE,gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), ggtheme = theme_gray()) + ggtitle("Variables - PCA")
+grid.arrange(pca_p1,pca_p2,pca_p3,pca_p4, nrow = 2)
+autoplot(scaled_df_pca, data = scaled_data, colour = 'Position', loadings = TRUE, label = TRUE, label.size = 3,
          loadings.label = TRUE, loadings.label.size  = 4)
 scatterplot3d(scaled_df_pca$x[,1:3], pch=20, color="blue") 
 rotationed_df <- as.data.frame(predict(scaled_df_pca))
@@ -137,18 +176,20 @@ rotationed_df <- as.data.frame(predict(scaled_df_pca))
 ##----------------------------------------------------------------
 ##              Data Pre-Processing for Clusturing              --
 ##----------------------------------------------------------------
+set.seed(123)
+hopkins(data = scaled_data[,-c(1,2)], nrow(scaled_data[,-c(1,2)])-1)
+get_clust_tendency(data = scaled_data[,-c(1,2)], n = 5)
 
-dist_m <- as.matrix(dist(scaled_data[1:50,-c(1,2)]))
+dist_m <- as.matrix(dist(scaled_data[1:25,-c(1,2)]))
 dist_mi <- 1/dist_m # one over, as qgraph takes similarity matrices as input
 qgraph(dist_mi, layout='spring', vsize=3)
 
 # Choosing the right algorithm with internal measures
 scaled_opt_algorithm_internal <- clValid(scaled_data[,-c(1,2)], nClust = 2:10, clMethods = c('hierarchical','kmeans','pam','clara'), validation = "internal", verbose = TRUE, method = 'ward')
 summary(scaled_opt_algorithm_internal)
-# Choosing the right algorithm with internal measures
+# Choosing the right algorithm with stabilitiy measures
 scaled_opt_algorithm_stability <- clValid(scaled_data[,-c(1,2)], nClust = 2:10, clMethods = c('hierarchical','kmeans','pam','clara'), validation = "stability", verbose = TRUE, method = 'ward')
 summary(scaled_opt_algorithm_stability)
-
 # find optimal cluster
 
 set.seed(31)
@@ -160,7 +201,7 @@ fviz_nbclust(scaled_data[,-c(1,2)], kmeans, method = "gap_stat", k.max = 24) + g
 fviz_nbclust(scaled_data[,-c(1,2)], kmeans, method = "silhouette", k.max = 24) + ggtitle("Silhouette Method") + theme_gray()
 # NbCluster method
 
-scaled_nbclust <- NbClust(scaled_data[,-c(1,2)], distance = "euclidean", min.nc = 2, max.nc = 10, method = "ward.D2", index ="all")
+scaled_nbclust <- NbClust(scaled_data[,-c(1,2)], distance = "euclidean", min.nc = 2, max.nc = 10, method = "ward.D2", index ="all", )
 fviz_nbclust(scaled_nbclust) + theme_gray() + ggtitle("NbClust's optimal number of clusters")
 
 
@@ -224,8 +265,33 @@ ssc %>% ggplot(., aes(x=kmeans, y=log(value), fill = measurement)) + geom_bar(st
 k3 <- kmeans(scaled_data[,-c(1,2)], centers = 3, nstart = 25)
 fviz_cluster(k3, data = scaled_data[,-c(1,2)]) + ggtitle("k = 3")
 scaled_data[,-c(1,2)] %>% mutate(Cluster = k3$cluster) %>% group_by(Cluster) %>% summarise_all("mean") %>% kable() %>% kable_styling()
-
 jaccard_df <- data.frame(actual = as.numeric(as.factor(scaled_data$Position)), predicted = k3$cluster)
+km.sil<-silhouette(k3$cluster, dist(scaled_data[,-c(1,2)]))
+fviz_silhouette(km.sil)
+d1<-cclust(scaled_data[,-c(1,2)], 3, dist="manhattan")
+shadow(d1)
+plot(shadow(d1))
+stripes(d1)
+
+scaled_data.c<-cbind(scaled_data[,-c(1,2)], k3$cluster)
+colnames(scaled_data.c)[15]<-c("Group")
+
+df.m <- melt(scaled_data.c, id.var = "Group")
+df.m$Group <- as.character(df.m$Group)
+
+ggplot(data = df.m, aes(x=variable, y=value)) +
+  geom_boxplot(aes(fill = Group),outlier.size = 1) +
+  facet_wrap( ~ variable, scales="free") +
+  xlab(label = NULL) + ylab(label = NULL) + ggtitle("Boxplots for 3 Groups of Players") +
+  guides(fill=guide_legend(title="Groups"))
+
+ggplot(data = df.m, aes(value, fill = Group)) +
+  geom_density()+
+  facet_wrap( ~ variable, scales="free") +
+  xlab(label = NULL) + ylab(label = NULL) + ggtitle("Density for 3 Groups of Players") +
+  guides(fill=guide_legend(title="Groups"))
+
+
 
 # margin 1 for wide 2 for long format 
 jaccard <- function(df, margin) {
@@ -292,13 +358,6 @@ rect.hclust(scaled_h_clust, k = 5, border = 2:5)
 cut_deng<- as.dendrogram(scaled_h_clust)
 plot(cut(cut_deng, h = 28)$lower[[2]],
      main = "Second branch of lower tree with cut at h=28")
-
-
-
-
-
-
-
 
 
 
